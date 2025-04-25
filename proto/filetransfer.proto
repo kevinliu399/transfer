@@ -2,17 +2,19 @@ syntax = "proto3";
 
 package filetransfer;
 
+option go_package = "github.com/kevinliu399/transfer/proto;filetransfer";
+
 service FileTransfer {
-    rpc UploadFile(UploadRequest) returns (UploadResponse);
+    rpc Upload(stream FileChunk) returns (UploadStatus);
 }
 
 message FileChunk {
-    string file_name = 1;
-    bytes content = 2;
-    int64 sequence = 3;
+    string filename = 1;
+    bytes data = 2;
+    int32 chunk_number = 3;
 }
 
 message UploadStatus {
-    string msg = 1;
-    bool success = 2;
+    bool success = 1;
+    string message = 2;
 }
