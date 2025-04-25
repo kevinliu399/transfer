@@ -23,7 +23,7 @@ func main() {
 
 	client := ft.NewFileTransferClient(conn)
 
-	file_path := "path/to/your/file.txt"
+	file_path := "test.txt"
 	err = uploadFile(client, file_path)
 	if err != nil {
 		log.Fatalf("could not upload file: %v", err)
