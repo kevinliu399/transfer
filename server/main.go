@@ -20,26 +20,31 @@ type server struct {
 
 func (s *server) Upload(stream ft.FileTransfer_UploadServer) error {
 
-	outPath := filepath.Join("./shared", filepath.Base("test.txt"))
-	outFile, err := os.OpenFile(outPath, os.O_CREATE|os.O_RDWR, 0644)
-	if err != nil {
-		return stream.SendAndClose(&ft.UploadStatus{
-			Success: false,
-			Message: err.Error(),
-		})
-	}
-	defer outFile.Close()
+	var (
+		outFile *os.File
+		err     error
+	)
 
 	for {
-		chunk, err := stream.Recv()
-		if err == io.EOF {
+		chunk, errRcv := stream.Recv()
+		if errRcv == io.EOF {
 			break
 		}
-		if err != nil {
+		if errRcv != nil {
 			return stream.SendAndClose(&ft.UploadStatus{
 				Success: false,
-				Message: err.Error(),
+				Message: errRcv.Error(),
 			})
+		}
+
+		if outFile == nil {
+			fname := filepath.Base(chunk.Filename)
+			outPath := filepath.Join("./shared", fname)
+			outFile, err = os.OpenFile(outPath, os.O_CREATE|os.O_RDWR, 0644)
+			if err != nil {
+				return stream.SendAndClose(&ft.UploadStatus{Success: false, Message: err.Error()})
+			}
+			defer outFile.Close()
 		}
 
 		gotSum := sha256.Sum256(chunk.Data)

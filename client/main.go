@@ -4,32 +4,29 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
 	ft "github.com/kevinliu399/transfer/proto"
-
 	"github.com/schollz/progressbar/v3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )
 
-const (
-	chunk_size  = 32 * 1024 // 32 KB
-	concurrency = 4
-)
+const chunkSize = 32 * 1024 // 32 KB
 
 func main() {
-
 	creds, err := credentials.NewClientTLSFromFile("certs/server.crt", "")
 	if err != nil {
-		log.Fatalf("failed to create TLS credentials %v", err)
+		log.Fatalf("failed to create TLS credentials: %v", err)
 	}
 
-	conn, err := grpc.NewClient("localhost:50051", grpc.WithTransportCredentials(creds))
+	conn, err := grpc.Dial("localhost:50051", grpc.WithTransportCredentials(creds))
 	if err != nil {
 		log.Fatalf("did not connect: %v", err)
 	}
@@ -37,18 +34,58 @@ func main() {
 
 	client := ft.NewFileTransferClient(conn)
 
-	file_path := "test.txt"
-	err = uploadFile(client, file_path)
+	uploadDir := "client/to_upload"
+	entries, err := os.ReadDir(uploadDir)
 	if err != nil {
-		log.Fatalf("could not upload file: %v", err)
+		log.Fatalf("failed to read upload dir %q: %v", uploadDir, err)
 	}
+
+	var totalBytes int64
+	var files []string
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		path := filepath.Join(uploadDir, entry.Name())
+		files = append(files, path)
+
+		fi, err := os.Stat(path)
+		if err != nil {
+			log.Fatalf("failed to stat file %q: %v", path, err)
+		}
+		totalBytes += fi.Size()
+	}
+
+	bar := progressbar.NewOptions64(
+		totalBytes,
+		progressbar.OptionSetDescription("Uploading all files"),
+		progressbar.OptionShowBytes(true),
+		progressbar.OptionSetWidth(40),
+		progressbar.OptionThrottle(100*time.Millisecond),
+		progressbar.OptionShowCount(),
+		progressbar.OptionSetPredictTime(true),
+	)
+	defer bar.Finish()
+
+	for _, path := range files {
+		fmt.Printf("Uploading %s …\n", path)
+		if err := uploadFile(client, path, bar); err != nil {
+			log.Printf("error uploading %s: %v", path, err)
+		}
+	}
+
+	fmt.Println("\n✅ All files uploaded successfully!")
 }
 
-func uploadFile(client ft.FileTransferClient, filePath string) error {
+func uploadFile(client ft.FileTransferClient, filePath string, bar *progressbar.ProgressBar) error {
 	stream, err := client.Upload(context.Background())
 	if err != nil {
 		return err
 	}
+	defer func() {
+		_ = stream.CloseSend()
+	}()
 
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -61,21 +98,13 @@ func uploadFile(client ft.FileTransferClient, filePath string) error {
 		return err
 	}
 	totalSize := fi.Size()
-	sem := make(chan struct{}, concurrency)
+
+	workers := calculateWorkers(totalSize)
+	fmt.Printf("Using %d workers for file %s (size %d bytes)\n", workers, filepath.Base(filePath), totalSize)
+	sem := make(chan struct{}, workers)
 	var wg sync.WaitGroup
 
-	bar := progressbar.NewOptions64(
-		totalSize,
-		progressbar.OptionSetDescription("Uploading"),
-		progressbar.OptionShowBytes(true),
-		progressbar.OptionSetWidth(40),
-		progressbar.OptionThrottle(100*time.Millisecond),
-		progressbar.OptionShowCount(),
-		progressbar.OptionSetPredictTime(true),
-	)
-
-	defer bar.Finish()
-	buf := make([]byte, chunk_size)
+	buf := make([]byte, chunkSize)
 	var offset int64
 	var chunkNum int64
 
@@ -87,6 +116,7 @@ func uploadFile(client ft.FileTransferClient, filePath string) error {
 		if err != nil {
 			return err
 		}
+
 		data := make([]byte, n)
 		copy(data, buf[:n])
 
@@ -120,6 +150,19 @@ func uploadFile(client ft.FileTransferClient, filePath string) error {
 	if err != nil {
 		return err
 	}
-	log.Printf("\n\nUpload result: success=%v, message=%q", resp.Success, resp.Message)
+	if !resp.Success {
+		return fmt.Errorf("upload failed: %s", resp.Message)
+	}
 	return nil
+}
+
+func calculateWorkers(totalSize int64) int {
+	switch {
+	case totalSize < 10*1024*1024:
+		return 2
+	case totalSize < 500*1024*1024:
+		return 4
+	default:
+		return 8
+	}
 }
