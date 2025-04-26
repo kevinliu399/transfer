@@ -25,7 +25,9 @@ type FileChunk struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Filename      string                 `protobuf:"bytes,1,opt,name=filename,proto3" json:"filename,omitempty"`
 	Data          []byte                 `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
-	ChunkNumber   int32                  `protobuf:"varint,3,opt,name=chunk_number,json=chunkNumber,proto3" json:"chunk_number,omitempty"`
+	ChunkNumber   int64                  `protobuf:"varint,3,opt,name=chunk_number,json=chunkNumber,proto3" json:"chunk_number,omitempty"`
+	Offset        int64                  `protobuf:"varint,4,opt,name=offset,proto3" json:"offset,omitempty"`
+	Checksum      string                 `protobuf:"bytes,5,opt,name=checksum,proto3" json:"checksum,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -74,11 +76,25 @@ func (x *FileChunk) GetData() []byte {
 	return nil
 }
 
-func (x *FileChunk) GetChunkNumber() int32 {
+func (x *FileChunk) GetChunkNumber() int64 {
 	if x != nil {
 		return x.ChunkNumber
 	}
 	return 0
+}
+
+func (x *FileChunk) GetOffset() int64 {
+	if x != nil {
+		return x.Offset
+	}
+	return 0
+}
+
+func (x *FileChunk) GetChecksum() string {
+	if x != nil {
+		return x.Checksum
+	}
+	return ""
 }
 
 type UploadStatus struct {
@@ -137,11 +153,13 @@ var File_proto_filetransfer_proto protoreflect.FileDescriptor
 
 const file_proto_filetransfer_proto_rawDesc = "" +
 	"\n" +
-	"\x18proto/filetransfer.proto\x12\ffiletransfer\"^\n" +
+	"\x18proto/filetransfer.proto\x12\ffiletransfer\"\x92\x01\n" +
 	"\tFileChunk\x12\x1a\n" +
 	"\bfilename\x18\x01 \x01(\tR\bfilename\x12\x12\n" +
 	"\x04data\x18\x02 \x01(\fR\x04data\x12!\n" +
-	"\fchunk_number\x18\x03 \x01(\x05R\vchunkNumber\"B\n" +
+	"\fchunk_number\x18\x03 \x01(\x03R\vchunkNumber\x12\x16\n" +
+	"\x06offset\x18\x04 \x01(\x03R\x06offset\x12\x1a\n" +
+	"\bchecksum\x18\x05 \x01(\tR\bchecksum\"B\n" +
 	"\fUploadStatus\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage2O\n" +

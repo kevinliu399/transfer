@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"log"
 	"os"
+	"sync"
 	"time"
 
 	ft "github.com/kevinliu399/transfer/proto"
@@ -14,7 +17,10 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
-const chunk_size = 32 * 1024 // 32 KB
+const (
+	chunk_size  = 32 * 1024 // 32 KB
+	concurrency = 4
+)
 
 func main() {
 
@@ -55,6 +61,8 @@ func uploadFile(client ft.FileTransferClient, filePath string) error {
 		return err
 	}
 	totalSize := fi.Size()
+	sem := make(chan struct{}, concurrency)
+	var wg sync.WaitGroup
 
 	bar := progressbar.NewOptions64(
 		totalSize,
@@ -68,7 +76,8 @@ func uploadFile(client ft.FileTransferClient, filePath string) error {
 
 	defer bar.Finish()
 	buf := make([]byte, chunk_size)
-	var chunkNum int32
+	var offset int64
+	var chunkNum int64
 
 	for {
 		n, err := file.Read(buf)
@@ -78,19 +87,35 @@ func uploadFile(client ft.FileTransferClient, filePath string) error {
 		if err != nil {
 			return err
 		}
+		data := make([]byte, n)
+		copy(data, buf[:n])
 
-		if err := stream.Send(&ft.FileChunk{
-			Filename:    filePath,
-			Data:        buf[:n],
-			ChunkNumber: chunkNum,
-		}); err != nil {
-			return err
-		}
+		sum := sha256.Sum256(data)
+		cs := hex.EncodeToString(sum[:])
+
+		wg.Add(1)
+		sem <- struct{}{}
+
+		go func(data []byte, off int64, num int64, checksum string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			if err := stream.Send(&ft.FileChunk{
+				Filename:    filePath,
+				Data:        data,
+				ChunkNumber: num,
+				Offset:      off,
+				Checksum:    checksum,
+			}); err != nil {
+				log.Printf("send chunk %d failed: %v", num, err)
+			}
+			bar.Add(len(data))
+		}(data, offset, chunkNum, cs)
+
 		chunkNum++
-
-		bar.Add(n)
+		offset += int64(n)
 	}
 
+	wg.Wait()
 	resp, err := stream.CloseAndRecv()
 	if err != nil {
 		return err

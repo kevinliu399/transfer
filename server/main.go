@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
@@ -18,70 +20,53 @@ type server struct {
 
 func (s *server) Upload(stream ft.FileTransfer_UploadServer) error {
 
-	chunks := make(chan *ft.FileChunk)
-	err_chan := make(chan error, 1)
-
-	go func() {
-		defer close(err_chan)
-		uploadDir := "./shared"
-		if err := os.MkdirAll(uploadDir, 0755); err != nil {
-			err_chan <- fmt.Errorf("mkdir: %w", err)
-			return
-		}
-
-		var outFile *os.File
-		var err error
-		defer func() {
-			if outFile != nil {
-				outFile.Close()
-			}
-		}()
-
-		for chunk := range chunks {
-			if outFile == nil {
-				safeName := filepath.Base(chunk.Filename)
-				dest := filepath.Join(uploadDir, safeName)
-				fmt.Printf("Writing to %s\n", dest)
-				outFile, err = os.Create(dest)
-				if err != nil {
-					err_chan <- fmt.Errorf("create file %s: %w", dest, err)
-					return
-				}
-			}
-
-			if _, err = outFile.Write(chunk.Data); err != nil {
-				err_chan <- fmt.Errorf("write chunk %d: %w", chunk.ChunkNumber, err)
-				return
-			}
-
-			err_chan <- nil
-		}
-	}()
+	outPath := filepath.Join("./shared", filepath.Base("test.txt"))
+	outFile, err := os.OpenFile(outPath, os.O_CREATE|os.O_RDWR, 0644)
+	if err != nil {
+		return stream.SendAndClose(&ft.UploadStatus{
+			Success: false,
+			Message: err.Error(),
+		})
+	}
+	defer outFile.Close()
 
 	for {
 		chunk, err := stream.Recv()
 		if err == io.EOF {
 			break
 		}
-
 		if err != nil {
-			return fmt.Errorf("stream.Recv: %w", err)
+			return stream.SendAndClose(&ft.UploadStatus{
+				Success: false,
+				Message: err.Error(),
+			})
 		}
-		chunks <- chunk
-	}
 
-	close(chunks)
+		gotSum := sha256.Sum256(chunk.Data)
+		if hex.EncodeToString(gotSum[:]) != chunk.Checksum {
+			return stream.SendAndClose(&ft.UploadStatus{
+				Success: false,
+				Message: fmt.Sprintf("checksum mismatch on chunk %d", chunk.ChunkNumber),
+			})
+		}
 
-	if writeErr := <-err_chan; writeErr != nil {
-		return stream.SendAndClose(&ft.UploadStatus{
-			Success: false,
-			Message: writeErr.Error(),
-		})
+		if _, err := outFile.Seek(chunk.Offset, io.SeekStart); err != nil {
+			return stream.SendAndClose(&ft.UploadStatus{
+				Success: false,
+				Message: err.Error(),
+			})
+		}
+		if _, err := outFile.Write(chunk.Data); err != nil {
+			return stream.SendAndClose(&ft.UploadStatus{
+				Success: false,
+				Message: err.Error(),
+			})
+		}
 	}
 
 	return stream.SendAndClose(&ft.UploadStatus{
 		Success: true,
-		Message: "File uploaded successfully",
+		Message: "Upload successful",
 	})
 }
 

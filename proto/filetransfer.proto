@@ -11,7 +11,9 @@ service FileTransfer {
 message FileChunk {
     string filename = 1;
     bytes data = 2;
-    int32 chunk_number = 3;
+    int64 chunk_number = 3;
+    int64 offset = 4;
+    string checksum = 5;
 }
 
 message UploadStatus {
