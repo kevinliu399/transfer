@@ -1,25 +1,40 @@
 # Transfer
 
-A high-performance file transfer utility using TLS encryption and gRPC for communication.
+A high-performance file transfer utility using TLS encryption, gRPC, and Go channels for efficient and secure data transmission.
 
 ## Features
 
-- Fast single file uploads (869.64 MB/s)
-- Concurrent upload support
-- TLS encryption for secure transfers
-- gRPC for efficient communication
-- Checksum verification to ensure data integrity
+- **High Performance**: Achieve transfer speeds up to 880+ MB/s
+- **Concurrent Transfers**: Support for multiple parallel file uploads
+- **Security**: TLS encryption for secure data transmission
+- **Reliability**: Checksum verification ensures data integrity
+- **Efficient Communication**: Powered by gRPC and Go channels
+- **Simple Interface**: Easy-to-use client and server components
 
 ## Benchmark Results
 
-### Single Upload
+### 21 MB File
 
-Average:   0.02s → 869.64 MB/s
+#### Single Upload
+- **Average Speed**: 869.64 MB/s (0.02s)
 
-### Concurrent Uploads
+#### Concurrent Uploads
 
-| Clients | Average Time |
-|---------|-------------|
-| 10      | 0.21s       |
-| 100     | 2.25s       |
-| 500     | 13.46s      |
+| Concurrent Clients | Average Time |
+|-------------------|--------------|
+| 10                | 0.21s        |
+| 100               | 2.25s        |
+| 500               | 13.46s       |
+
+### 171 MB File
+
+#### Single Upload
+- **Average Speed**: 881.22 MB/s (0.19s)
+
+#### Concurrent Uploads
+
+| Concurrent Clients | Average Time |
+|-------------------|--------------|
+| 10                | 1.52s        |
+| 50                | 8.33s        |
+| 100               | 16.35s       |
