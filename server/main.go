@@ -9,6 +9,7 @@ import (
 
 	ft "github.com/kevinliu399/transfer/proto"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 type server struct {
@@ -21,6 +22,7 @@ func (s *server) Upload(stream ft.FileTransfer_UploadServer) error {
 	err_chan := make(chan error, 1)
 
 	go func() {
+		defer close(err_chan)
 		uploadDir := "./shared"
 		if err := os.MkdirAll(uploadDir, 0755); err != nil {
 			err_chan <- fmt.Errorf("mkdir: %w", err)
@@ -33,7 +35,6 @@ func (s *server) Upload(stream ft.FileTransfer_UploadServer) error {
 			if outFile != nil {
 				outFile.Close()
 			}
-			close(err_chan)
 		}()
 
 		for chunk := range chunks {
@@ -91,8 +92,17 @@ func main() {
 		return
 	}
 
-	s := grpc.NewServer()
+	creds, err := credentials.NewServerTLSFromFile(
+		"certs/server.crt",
+		"certs/server.key",
+	)
+	if err != nil {
+		fmt.Printf("failed to create TLS credentials: %v", err)
+		return
+	}
+	s := grpc.NewServer(grpc.Creds(creds))
 	ft.RegisterFileTransferServer(s, &server{})
+
 	fmt.Printf("Server is listening on port :50051\n")
 	if err := s.Serve(conn); err != nil {
 		fmt.Printf("failed to serve: %v", err)
