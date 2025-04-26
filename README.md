@@ -11,7 +11,7 @@ A high-performance file transfer utility using TLS encryption, gRPC, and Go chan
 - **Efficient Communication**: Powered by gRPC and Go channels
 - **Simple Interface**: Easy-to-use client and server components
 
-## Benchmark Results
+## Benchmark Results on Local Network
 
 ### 21 MB File
 
