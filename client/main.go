@@ -18,7 +18,10 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
-const chunkSize = 32 * 1024 // 32 KB
+const (
+	chunkSize    = 32 * 1024 // 32 KB
+	uploadWorker = 4
+)
 
 func main() {
 	creds, err := credentials.NewClientTLSFromFile("certs/server.crt", "")
@@ -26,7 +29,7 @@ func main() {
 		log.Fatalf("failed to create TLS credentials: %v", err)
 	}
 
-	conn, err := grpc.Dial("localhost:50051", grpc.WithTransportCredentials(creds))
+	conn, err := grpc.NewClient("localhost:50051", grpc.WithTransportCredentials(creds))
 	if err != nil {
 		log.Fatalf("did not connect: %v", err)
 	}
@@ -64,16 +67,30 @@ func main() {
 		progressbar.OptionSetWidth(40),
 		progressbar.OptionThrottle(100*time.Millisecond),
 		progressbar.OptionShowCount(),
-		progressbar.OptionSetPredictTime(true),
 	)
 	defer bar.Finish()
 
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, uploadWorker)
+
 	for _, path := range files {
-		fmt.Printf("Uploading %s …\n", path)
-		if err := uploadFile(client, path, bar); err != nil {
-			log.Printf("error uploading %s: %v", path, err)
-		}
+		wg.Add(1)
+		sem <- struct{}{}
+
+		go func(path string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			fmt.Printf("Uploading %s …\n", path)
+			if err := uploadFile(client, path, bar); err != nil {
+				log.Printf("error uploading %s: %v", path, err)
+			} else {
+				fmt.Printf("%s uploaded successfully!\n", path)
+			}
+		}(path)
 	}
+
+	wg.Wait()
 
 	fmt.Println("\n✅ All files uploaded successfully!")
 }
@@ -100,7 +117,7 @@ func uploadFile(client ft.FileTransferClient, filePath string, bar *progressbar.
 	totalSize := fi.Size()
 
 	workers := calculateWorkers(totalSize)
-	fmt.Printf("Using %d workers for file %s (size %d bytes)\n", workers, filepath.Base(filePath), totalSize)
+
 	sem := make(chan struct{}, workers)
 	var wg sync.WaitGroup
 
